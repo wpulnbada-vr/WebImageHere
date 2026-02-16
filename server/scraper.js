@@ -96,6 +96,25 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|bmp)(\?|$)/i;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+function extractAlbumName(title, keyword) {
+  if (!title || title === 'Direct URL') return '';
+  let album = title;
+  // Remove keyword occurrences (case-insensitive)
+  if (keyword) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    album = album.replace(new RegExp(escaped, 'gi'), '');
+  }
+  // Remove common bracket prefixes like [Korea], [Japan], [Cosplay]
+  album = album.replace(/\[[^\]]*\]\s*/g, '');
+  // Remove leading/trailing separators
+  album = album.replace(/^[\s\-–—|:,·]+|[\s\-–—|:,·]+$/g, '').trim();
+  // Sanitize for filename
+  album = sanitize(album).replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  // Truncate to reasonable length
+  if (album.length > 50) album = album.substring(0, 50).replace(/_$/, '');
+  return album;
+}
+
 class ImageScraper extends EventEmitter {
   constructor() {
     super();
@@ -212,6 +231,7 @@ class ImageScraper extends EventEmitter {
         const post = posts[i];
         this.emit('post', { current: i + 1, total: posts.length, title: post.title });
 
+        const albumName = extractAlbumName(post.title, keyword);
         const imgs = await this._getPostImages(post.url, minWidth, minHeight);
         const newImgs = imgs.filter(u => !allImageUrls.has(u));
         newImgs.forEach(u => allImageUrls.add(u));
@@ -251,7 +271,8 @@ class ImageScraper extends EventEmitter {
             try {
               const ext = this._getExtension(imgUrl);
               fileCounter++;
-              const filename = `${folderName}_${String(fileCounter).padStart(4, '0')}${ext}`;
+              const prefix = albumName ? `${folderName}_${albumName}` : folderName;
+              const filename = `${prefix}_${String(fileCounter).padStart(4, '0')}${ext}`;
               const filepath = path.join(saveDir, filename);
 
               let downloaded = false;
