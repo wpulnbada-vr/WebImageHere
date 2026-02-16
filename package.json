@@ -1,0 +1,62 @@
+{
+  "name": "webimagehere-desktop",
+  "version": "1.0.0",
+  "description": "WebImageHere - Web Image Scraper Desktop App",
+  "main": "main.js",
+  "author": "martinwoo",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:dir": "electron-builder --dir",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "@puppeteer/browsers": "^2.9.0",
+    "archiver": "^7.0.1",
+    "express": "^4.21.0",
+    "puppeteer-core": "^24.37.3",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "sanitize-filename": "^1.6.3",
+    "serve-index": "^1.9.2"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.webimagehere.desktop",
+    "productName": "WebImageHere",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server/**/*",
+      "public/**/*",
+      "build/icon.*"
+    ],
+    "asarUnpack": [
+      "node_modules/puppeteer-core/**/*",
+      "node_modules/puppeteer-extra/**/*",
+      "node_modules/puppeteer-extra-plugin-stealth/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WebImageHere"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png"
+    }
+  }
+}
