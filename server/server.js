@@ -4,6 +4,9 @@ const fs = require('fs');
 const archiver = require('archiver');
 const serveIndex = require('serve-index');
 const ImageScraper = require('./scraper');
+const Monitor = require('./monitor');
+const Auth = require('./auth');
+const FileManager = require('./filemanager');
 
 // Job store (in-memory)
 const jobs = new Map();
@@ -46,8 +49,6 @@ function addToHistory(job) {
   } else {
     history.unshift(entry);
   }
-  // Remove zero-file duplicates: if this job completed with results,
-  // delete older entries with the same url+keyword that have 0 files
   if (job.status === 'completed' && job.result?.total > 0) {
     history = history.filter(h =>
       h.id === job.id ||
@@ -108,6 +109,7 @@ function runJob(job) {
       job.completedAt = new Date().toISOString();
       job.result = { total: event.total, folder: event.folder, duration: event.duration };
       addToHistory(job);
+      Monitor.onJobEvent('complete', job);
       closeClients(job);
       processQueue();
     } else if (event.type === 'error' && !job.events.some(e => e.type === 'complete')) {
@@ -116,6 +118,7 @@ function runJob(job) {
         job.completedAt = new Date().toISOString();
         job.error = event.message;
         addToHistory(job);
+        Monitor.onJobEvent('fail', job);
         closeClients(job);
         processQueue();
       }
@@ -142,14 +145,6 @@ function closeClients(job) {
 
 /**
  * Start the Express server.
- * @param {object} options
- * @param {number} options.port - Port to listen on
- * @param {string} options.host - Host to bind to (default: '0.0.0.0')
- * @param {string} options.downloadsDir - Directory for downloaded images
- * @param {string} options.historyFile - Path to history.json
- * @param {string} options.publicDir - Path to static frontend files
- * @param {string} [options.chromePath] - Chrome executable path
- * @returns {Promise<{app: express.Application, server: import('http').Server, port: number}>}
  */
 function startServer(options = {}) {
   const {
@@ -159,12 +154,19 @@ function startServer(options = {}) {
     historyFile = path.join(__dirname, '..', 'history.json'),
     publicDir = path.join(__dirname, '..', 'public'),
     chromePath,
+    configDir,
   } = options;
 
   HISTORY_FILE = historyFile;
   DOWNLOADS_DIR = downloadsDir;
 
-  // Ensure directories exist
+  // Initialize modules with config directory
+  const cfgDir = configDir || path.dirname(historyFile);
+  Auth.init(cfgDir);
+  Monitor.init(cfgDir, downloadsDir);
+
+  const serverStartTime = new Date().toISOString();
+
   if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
 
   const app = express();
@@ -176,15 +178,8 @@ function startServer(options = {}) {
   app.post('/api/scrape', (req, res) => {
     const { url, keyword } = req.body;
 
-    if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
-    }
-
-    try {
-      new URL(url);
-    } catch {
-      return res.status(400).json({ error: 'Invalid URL' });
-    }
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
 
     for (const existing of jobs.values()) {
       if (existing.url === url && existing.keyword === (keyword || '') &&
@@ -195,20 +190,10 @@ function startServer(options = {}) {
 
     const jobId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const job = {
-      id: jobId,
-      url,
-      keyword: keyword || '',
-      status: 'queued',
-      createdAt: new Date().toISOString(),
-      startedAt: null,
-      completedAt: null,
-      events: [],
-      lastEvent: null,
-      clients: [],
-      scraper: null,
-      result: null,
-      error: null,
-      _chromePath: chromePath,
+      id: jobId, url, keyword: keyword || '', status: 'queued',
+      createdAt: new Date().toISOString(), startedAt: null, completedAt: null,
+      events: [], lastEvent: null, clients: [], scraper: null,
+      result: null, error: null, _chromePath: chromePath,
     };
 
     jobs.set(jobId, job);
@@ -226,9 +211,7 @@ function startServer(options = {}) {
   // GET /api/progress/:jobId — SSE stream
   app.get('/api/progress/:jobId', (req, res) => {
     const job = jobs.get(req.params.jobId);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -247,7 +230,6 @@ function startServer(options = {}) {
     }
 
     job.clients.push(res);
-
     req.on('close', () => {
       job.clients = job.clients.filter(c => c !== res);
     });
@@ -258,14 +240,9 @@ function startServer(options = {}) {
     const list = [];
     for (const job of jobs.values()) {
       list.push({
-        id: job.id,
-        url: job.url,
-        keyword: job.keyword,
-        status: job.status,
-        createdAt: job.createdAt,
-        completedAt: job.completedAt,
-        result: job.result,
-        error: job.error,
+        id: job.id, url: job.url, keyword: job.keyword, status: job.status,
+        createdAt: job.createdAt, completedAt: job.completedAt,
+        result: job.result, error: job.error,
       });
     }
     res.json(list.reverse());
@@ -274,12 +251,8 @@ function startServer(options = {}) {
   // POST /api/abort/:jobId
   app.post('/api/abort/:jobId', (req, res) => {
     const job = jobs.get(req.params.jobId);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    if (job.scraper) {
-      job.scraper.abort();
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.scraper) job.scraper.abort();
     job.status = 'aborted';
     job.completedAt = new Date().toISOString();
     addToHistory(job);
@@ -290,12 +263,8 @@ function startServer(options = {}) {
   // DELETE /api/jobs/:jobId
   app.delete('/api/jobs/:jobId', (req, res) => {
     const job = jobs.get(req.params.jobId);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    if (job.scraper) {
-      job.scraper.abort();
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.scraper) job.scraper.abort();
     closeClients(job);
     const qIdx = queue.indexOf(req.params.jobId);
     if (qIdx !== -1) queue.splice(qIdx, 1);
@@ -307,21 +276,22 @@ function startServer(options = {}) {
     res.json({ status: 'deleted' });
   });
 
-  // GET /api/history — Persistent history with live status from memory
+  // DELETE /api/history — Clear all history
+  app.delete('/api/history', (req, res) => {
+    saveHistory([]);
+    res.json({ ok: true });
+  });
+
+  // GET /api/history
   app.get('/api/history', (req, res) => {
     const history = loadHistory();
     const result = history.map(h => {
       const memJob = jobs.get(h.id);
       if (memJob) {
         return {
-          id: memJob.id,
-          url: memJob.url,
-          keyword: memJob.keyword,
-          status: memJob.status,
-          createdAt: memJob.createdAt,
-          completedAt: memJob.completedAt,
-          result: memJob.result,
-          error: memJob.error,
+          id: memJob.id, url: memJob.url, keyword: memJob.keyword, status: memJob.status,
+          createdAt: memJob.createdAt, completedAt: memJob.completedAt,
+          result: memJob.result, error: memJob.error,
         };
       }
       return h;
@@ -329,13 +299,11 @@ function startServer(options = {}) {
     res.json(result);
   });
 
-  // GET /browse/:folder — Lightweight paginated image gallery
+  // GET /browse/:folder
   app.get('/browse/:folder', (req, res) => {
     const folder = req.params.folder;
     const dir = path.join(downloadsDir, folder);
-    if (!fs.existsSync(dir)) {
-      return res.status(404).send('Folder not found');
-    }
+    if (!fs.existsSync(dir)) return res.status(404).send('Folder not found');
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const perPage = 200;
@@ -398,13 +366,11 @@ ${paginationHtml}
 </body></html>`);
   });
 
-  // GET /api/files/:folder
-  app.get('/api/files/:folder', (req, res) => {
+  // GET /api/folder-files/:folder — List downloaded files (for ImageGrid)
+  app.get('/api/folder-files/:folder', (req, res) => {
     const folder = req.params.folder;
     const dir = path.join(downloadsDir, folder);
-    if (!fs.existsSync(dir)) {
-      return res.json([]);
-    }
+    if (!fs.existsSync(dir)) return res.json([]);
     const files = fs.readdirSync(dir)
       .filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f))
       .sort()
@@ -415,18 +381,110 @@ ${paginationHtml}
     res.json(files);
   });
 
+  // --- Auth API ---
+  app.get('/api/auth/status', (req, res) => {
+    const setupComplete = Auth.isSetupComplete();
+    const apiKey = req.headers['x-api-key'];
+    const authHeader = req.headers.authorization;
+    let authenticated = false;
+    if (apiKey && Auth.verifyApiKey(apiKey)) authenticated = true;
+    if (authHeader && authHeader.startsWith('Bearer ') && Auth.verifyToken(authHeader.slice(7))) authenticated = true;
+    res.json({ setupComplete, authenticated });
+  });
+
+  app.post('/api/auth/setup', async (req, res) => {
+    if (Auth.isSetupComplete()) return res.status(400).json({ error: 'Already configured' });
+    const { password } = req.body;
+    if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    await Auth.createAdmin(password);
+    const token = Auth.generateToken();
+    res.json({ ok: true, token });
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    const { password } = req.body;
+    const valid = await Auth.verifyPassword(password);
+    if (!valid) return res.status(401).json({ error: 'Invalid password' });
+    const token = Auth.generateToken();
+    res.json({ ok: true, token });
+  });
+
+  app.post('/api/auth/api-keys', Auth.authMiddleware, (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    const entry = Auth.generateApiKey(name);
+    res.json(entry);
+  });
+
+  app.get('/api/auth/api-keys', Auth.authMiddleware, (req, res) => {
+    res.json(Auth.listApiKeys());
+  });
+
+  app.delete('/api/auth/api-keys/:id', Auth.authMiddleware, (req, res) => {
+    const ok = Auth.deleteApiKey(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Key not found' });
+    res.json({ ok: true });
+  });
+
+  // --- File Manager API ---
+  app.use('/api/files', FileManager.createRouter(Auth.authMiddleware, downloadsDir));
+
+  // --- Monitor API ---
+  app.get('/api/monitor/system', (req, res) => {
+    res.json(Monitor.collectSystemMetrics(jobs, queue, serverStartTime));
+  });
+
+  app.get('/api/monitor/stats', (req, res) => {
+    const history = loadHistory();
+    res.json(Monitor.aggregateStats(history));
+  });
+
+  app.get('/api/monitor/realtime', (req, res) => {
+    const history = loadHistory();
+    res.json(Monitor.getRealtimeStatus(jobs, queue, history));
+  });
+
+  app.get('/api/monitor/config', (req, res) => {
+    const config = Monitor.loadConfig();
+    const masked = { ...config.discord };
+    if (masked.webhookUrl) {
+      masked.webhookUrl = masked.webhookUrl.slice(0, 20) + '...' + masked.webhookUrl.slice(-10);
+    }
+    res.json(masked);
+  });
+
+  app.post('/api/monitor/config', (req, res) => {
+    try {
+      const config = Monitor.loadConfig();
+      const { webhookUrl, enabled, notifyOnComplete, notifyOnFail, notifyOnDiskWarning, diskWarningThresholdMB } = req.body;
+      if (webhookUrl !== undefined) config.discord.webhookUrl = webhookUrl;
+      if (enabled !== undefined) config.discord.enabled = enabled;
+      if (notifyOnComplete !== undefined) config.discord.notifyOnComplete = notifyOnComplete;
+      if (notifyOnFail !== undefined) config.discord.notifyOnFail = notifyOnFail;
+      if (notifyOnDiskWarning !== undefined) config.discord.notifyOnDiskWarning = notifyOnDiskWarning;
+      if (diskWarningThresholdMB !== undefined) config.discord.diskWarningThresholdMB = diskWarningThresholdMB;
+      Monitor.saveConfig(config);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/monitor/test-alert', async (req, res) => {
+    const config = Monitor.loadConfig();
+    if (!config.discord.webhookUrl) return res.status(400).json({ error: 'No webhook URL configured' });
+    const ok = await Monitor.sendDiscordAlert(config, 'test', {});
+    res.json({ ok: !!ok });
+  });
+
   // GET /api/zip/:folder
   app.get('/api/zip/:folder', (req, res) => {
     const folder = req.params.folder;
     const dir = path.join(downloadsDir, folder);
-    if (!fs.existsSync(dir)) {
-      return res.status(404).json({ error: 'Folder not found' });
-    }
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Folder not found' });
 
     const files = fs.readdirSync(dir).filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f));
-    if (files.length === 0) {
-      return res.status(404).json({ error: 'No images in folder' });
-    }
+    if (files.length === 0) return res.status(404).json({ error: 'No images in folder' });
 
     res.setHeader('Content-Type', 'application/zip');
     const safeFilename = encodeURIComponent(folder) + '.zip';
@@ -434,11 +492,9 @@ ${paginationHtml}
 
     const archive = archiver('zip', { zlib: { level: 1 } });
     archive.pipe(res);
-
     for (const file of files) {
       archive.file(path.join(dir, file), { name: file });
     }
-
     archive.finalize();
   });
 
@@ -459,20 +515,10 @@ function recoverOrphanedJobs(chromePath) {
   console.log(`[WebImageHere] Recovering ${orphaned.length} interrupted job(s)...`);
   for (const h of orphaned) {
     const job = {
-      id: h.id,
-      url: h.url,
-      keyword: h.keyword || '',
-      status: 'queued',
-      createdAt: h.createdAt,
-      startedAt: null,
-      completedAt: null,
-      events: [],
-      lastEvent: null,
-      clients: [],
-      scraper: null,
-      result: null,
-      error: null,
-      _chromePath: chromePath,
+      id: h.id, url: h.url, keyword: h.keyword || '', status: 'queued',
+      createdAt: h.createdAt, startedAt: null, completedAt: null,
+      events: [], lastEvent: null, clients: [], scraper: null,
+      result: null, error: null, _chromePath: chromePath,
     };
     jobs.set(h.id, job);
     updateHistoryItem(h.id, { status: 'queued' });
@@ -486,7 +532,7 @@ function recoverOrphanedJobs(chromePath) {
   }
 }
 
-// Standalone mode: run directly with `node server/server.js`
+// Standalone mode
 if (require.main === module) {
   startServer({
     port: parseInt(process.env.PORT) || 3000,

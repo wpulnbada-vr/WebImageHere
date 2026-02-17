@@ -325,6 +325,7 @@ app.whenReady().then(async () => {
       historyFile: HISTORY_FILE,
       publicDir: path.join(__dirname, 'public'),
       chromePath,
+      configDir: userDataDir,
     });
     expressServer = result.server;
 
