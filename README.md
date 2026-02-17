@@ -15,17 +15,37 @@
 
 ---
 
+## Screenshots
+
+| Scraping Dashboard | Monitoring & Statistics |
+|:--:|:--:|
+| ![Main Dashboard](docs/screenshot-main.png) | ![Monitoring](docs/screenshot-monitor.png) |
+
+---
+
 ## Features
 
+### Image Scraping
 - **Batch Image Download** — Enter a URL and an optional keyword to collect all matching images automatically
 - **Smart Page Navigation** — Follows pagination, multi-page galleries, and linked sub-pages to find every image
 - **Lazy-load Aware** — Scrolls pages to trigger lazy-loaded content and parses `data-src`, `srcset`, and other deferred attributes
 - **High-fidelity Capture** — Uses Chrome DevTools Protocol to capture original image data directly from network responses, ensuring full-resolution downloads
 - **Duplicate Filtering** — Skips thumbnails, icons, and already-downloaded files based on size and pattern matching
 - **Concurrent Downloads** — Parallel download pipeline with configurable concurrency
-- **ZIP Export** — Download an entire image folder as a single .zip archive
 - **Job Queue** — Run up to 2 scraping jobs simultaneously with automatic queuing
-- **Persistent History** — Browse and manage past downloads across sessions
+
+### Monitoring & Management
+- **System Monitoring** — Real-time CPU, memory, disk, Puppeteer status dashboard
+- **Job Statistics** — Success rate donut chart, top sites/keywords bar charts, 30-day activity graph
+- **Discord Alerts** — Webhook notifications for job completion, failure, and disk warnings
+- **File Manager** — Browse, upload, download, delete files and folders directly from the dashboard
+- **ZIP Export** — Download selected files or entire folders as a single .zip archive
+- **Persistent History** — Browse and manage past downloads across sessions with bulk clear
+
+### Security
+- **Admin Authentication** — Password-protected dashboard (bcrypt hashed, JWT tokens)
+- **API Keys** — Generate `wih_` prefixed keys for external service access (e.g., OpenClaw)
+- **Path Traversal Protection** — All file operations validated against the downloads directory
 
 ## Download
 
@@ -69,6 +89,18 @@ Build output is written to `dist/`.
 4. Click **Start** — progress is streamed in real time
 5. View results in the built-in gallery or open the downloads folder
 
+### First-time Setup
+
+On first access, you'll be prompted to set an admin password. This protects the file manager and API key features. The scraping dashboard works without authentication.
+
+### Tabs
+
+| Tab | Description |
+|-----|-------------|
+| **Jobs** | Enter URLs, start scraping, view real-time progress and history |
+| **Monitoring** | System metrics, job statistics, Discord alert config, API key management |
+| **Files** | Browse downloads, upload/delete files, download as ZIP |
+
 ## How It Works
 
 WebImageHere runs a local Express server inside the Electron process, paired with a headless Chromium instance powered by Puppeteer.
@@ -76,7 +108,10 @@ WebImageHere runs a local Express server inside the Electron process, paired wit
 ```
 Electron Main Process
 ├── Express API Server (localhost only, auto-assigned port)
-├── Puppeteer (headless Chromium)
+│   ├── Scraping Engine (Puppeteer + CDP)
+│   ├── Auth Module (bcrypt + JWT + API Keys)
+│   ├── File Manager (upload/download/delete/ZIP)
+│   └── Monitor (metrics + Discord webhooks)
 └── BrowserWindow (React UI)
 ```
 
@@ -95,6 +130,7 @@ Electron Main Process
 - The Express server binds exclusively to `127.0.0.1` and is never exposed to the network
 - Cross-platform Chrome detection (`CHROME_PATH` env > managed cache > system install)
 - Single instance lock prevents multiple app windows from conflicting
+- Auth config stored in user data directory (not app directory)
 
 ## Data Storage
 
@@ -102,6 +138,7 @@ Electron Main Process
 |------|---------|-------|
 | Downloaded images | `Documents\WebImageHere Downloads\` | `~/Documents/WebImageHere Downloads/` |
 | Job history | `%APPDATA%\WebImageHere\history.json` | `~/.config/WebImageHere/history.json` |
+| Auth config | `%APPDATA%\WebImageHere\auth-config.json` | `~/.config/WebImageHere/auth-config.json` |
 | Chromium runtime | `%APPDATA%\WebImageHere\chrome\` | `~/.config/WebImageHere/chrome/` |
 
 ## Uninstall
@@ -152,7 +189,9 @@ WebImageHere --clear-data --include-downloads
 | Packaging | [electron-builder](https://www.electron.build/) |
 | Backend | [Express](https://expressjs.com/) 4 |
 | Browser automation | [Puppeteer](https://pptr.dev/) |
-| Frontend | React + [Vite](https://vite.dev/) |
+| Frontend | React 19 + [Vite](https://vite.dev/) + Tailwind CSS v4 |
+| Authentication | bcryptjs + jsonwebtoken |
+| File upload | multer |
 | Archive | [Archiver](https://www.archiverjs.com/) |
 
 ## Project Structure
@@ -163,7 +202,10 @@ WebImageHere/
 ├── preload.js         # Context-isolated IPC bridge
 ├── server/
 │   ├── server.js      # Express API (startServer function)
-│   └── scraper.js     # Puppeteer-based image collector
+│   ├── scraper.js     # Puppeteer-based image collector
+│   ├── auth.js        # Authentication (password + JWT + API keys)
+│   ├── filemanager.js # File management API
+│   └── monitor.js     # System monitoring + Discord alerts
 ├── public/            # Production React build
 └── build/
     └── icon.png       # App icon
