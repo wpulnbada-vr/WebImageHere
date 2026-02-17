@@ -132,7 +132,7 @@ rm -rf ~/Documents/WebImageHere\ Downloads
 
 ### In-App Reset
 
-Right-click the **system tray icon** and select **"데이터 초기화"** (Reset App Data) to delete history and cached Chromium without uninstalling the app. An optional checkbox lets you also delete all downloaded images.
+Right-click the **system tray icon** and select **"Reset Data"** to delete history and cached Chromium without uninstalling the app. An optional checkbox lets you also delete all downloaded images.
 
 ### CLI Reset
 
