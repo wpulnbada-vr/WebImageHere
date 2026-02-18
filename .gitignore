@@ -3,6 +3,10 @@ dist/
 downloads/
 history.json
 *.log
+.env
+.jwt-secret
+auth-config.json
+.omc/
 
 # OS files
 .DS_Store
