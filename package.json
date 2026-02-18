@@ -1,7 +1,7 @@
 {
-  "name": "webimagehere-desktop",
+  "name": "webhere-desktop",
   "version": "0.2.0",
-  "description": "WebImageHere - Web Image Scraper Desktop App",
+  "description": "WebHere - Web Image Archiver Desktop App",
   "main": "main.js",
   "author": "martinwoo",
   "license": "MIT",
@@ -29,8 +29,8 @@
     "electron-builder": "^26.0.0"
   },
   "build": {
-    "appId": "com.webimagehere.desktop",
-    "productName": "WebImageHere",
+    "appId": "com.webhere.desktop",
+    "productName": "WebHere",
     "directories": {
       "output": "dist"
     },
@@ -38,7 +38,9 @@
       "main.js",
       "preload.js",
       "server/**/*",
+      "setup/**/*",
       "public/**/*",
+      "public-setup/**/*",
       "build/icon.*"
     ],
     "asarUnpack": [
@@ -55,9 +57,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "WebImageHere",
+      "shortcutName": "WebHere",
       "deleteAppDataOnUninstall": true,
-      "uninstallDisplayName": "WebImageHere"
+      "uninstallDisplayName": "WebHere",
+      "include": "build/installer.nsh",
+      "license": "build/license.txt"
     },
     "linux": {
       "target": "AppImage",

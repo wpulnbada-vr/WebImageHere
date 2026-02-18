@@ -514,7 +514,7 @@ ${paginationHtml}
 
   return new Promise((resolve) => {
     const server = app.listen(port, host, () => {
-      console.log(`[WebImageHere] http://localhost:${port}`);
+      console.log(`[WebHere] http://localhost:${port}`);
       recoverOrphanedJobs(chromePath);
       resolve({ app, server, port });
     });
@@ -526,7 +526,7 @@ function recoverOrphanedJobs(chromePath) {
   const orphaned = history.filter(h => h.status === 'running' || h.status === 'queued');
   if (orphaned.length === 0) return;
 
-  console.log(`[WebImageHere] Recovering ${orphaned.length} interrupted job(s)...`);
+  console.log(`[WebHere] Recovering ${orphaned.length} interrupted job(s)...`);
   for (const h of orphaned) {
     const job = {
       id: h.id, url: h.url, keyword: h.keyword || '', status: 'queued',
@@ -542,7 +542,7 @@ function recoverOrphanedJobs(chromePath) {
     } else {
       queue.push(h.id);
     }
-    console.log(`[WebImageHere]   → Re-queued: "${h.keyword}" (${h.url})`);
+    console.log(`[WebHere]   → Re-queued: "${h.keyword}" (${h.url})`);
   }
 }
 

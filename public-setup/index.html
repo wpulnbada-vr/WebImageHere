@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebHere Setup</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+
+<!-- Title Bar -->
+<div class="titlebar">
+  <span class="titlebar-title">WebHere Setup</span>
+  <button class="titlebar-close" id="btn-close" title="Close">&times;</button>
+</div>
+
+<div class="container">
+  <!-- Step Indicator -->
+  <div class="steps-indicator" id="steps-indicator"></div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- Step 0: Welcome -->
+    <div class="step-page active" data-step="0">
+      <div class="step-icon">&#127760;</div>
+      <h1 class="step-title">Welcome to WebHere</h1>
+      <p class="step-desc">
+        Organize and archive publicly available images from the web.<br>
+        This wizard will help you set up WebHere in a few quick steps.
+      </p>
+    </div>
+
+    <!-- Step 1: Downloads Directory -->
+    <div class="step-page" data-step="1">
+      <div class="step-icon">&#128193;</div>
+      <h1 class="step-title">Downloads Directory</h1>
+      <p class="step-desc">Choose where downloaded images will be saved.</p>
+      <div class="input-group">
+        <label class="input-label">Save location</label>
+        <div class="input-row">
+          <input type="text" class="input-field" id="downloads-dir" readonly>
+          <button class="btn-browse" id="btn-pick-dir">Browse...</button>
+        </div>
+        <p class="input-hint">You can change this later in the app settings.</p>
+      </div>
+    </div>
+
+    <!-- Step 2: Admin Password -->
+    <div class="step-page" data-step="2">
+      <div class="step-icon">&#128274;</div>
+      <h1 class="step-title">Admin Password</h1>
+      <p class="step-desc">Set a password to protect the file manager and API features.</p>
+      <div class="input-group">
+        <label class="input-label">Password</label>
+        <div class="password-wrapper">
+          <input type="password" class="input-field" id="password" placeholder="Enter password (min 4 characters)">
+          <button class="password-toggle" id="toggle-pw" type="button">&#128065;</button>
+        </div>
+      </div>
+      <div class="input-group">
+        <label class="input-label">Confirm password</label>
+        <div class="password-wrapper">
+          <input type="password" class="input-field" id="password-confirm" placeholder="Confirm password">
+          <button class="password-toggle" id="toggle-pw-confirm" type="button">&#128065;</button>
+        </div>
+        <p class="input-error" id="password-error"></p>
+      </div>
+    </div>
+
+    <!-- Step 3: Discord Notifications -->
+    <div class="step-page" data-step="3">
+      <div class="step-icon">&#128276;</div>
+      <h1 class="step-title">Discord Notifications</h1>
+      <p class="step-desc">Get notified when jobs complete or fail. This is optional.</p>
+      <div class="toggle-row">
+        <span class="toggle-label">Enable Discord notifications</span>
+        <label class="toggle">
+          <input type="checkbox" id="discord-toggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="input-group" id="discord-url-group" style="display:none">
+        <label class="input-label">Webhook URL</label>
+        <input type="text" class="input-field" id="discord-url" placeholder="https://discord.com/api/webhooks/...">
+        <p class="input-hint">Create a webhook in your Discord server settings &rarr; Integrations &rarr; Webhooks</p>
+      </div>
+    </div>
+
+    <!-- Step 4: Browser Setup -->
+    <div class="step-page" data-step="4">
+      <div class="step-icon">&#127758;</div>
+      <h1 class="step-title">Browser Setup</h1>
+      <p class="step-desc">WebHere needs a browser engine to navigate websites and collect images.</p>
+
+      <div class="chrome-status" id="chrome-found" style="display:none">
+        <span class="chrome-status-icon">&#9989;</span>
+        <div class="chrome-status-text">
+          <strong>Chrome detected</strong>
+          <span>Ready to use. No download needed.</span>
+        </div>
+      </div>
+
+      <div id="chrome-download-section">
+        <div class="chrome-status" id="chrome-needed">
+          <span class="chrome-status-icon">&#128269;</span>
+          <div class="chrome-status-text">
+            <strong>Browser download required</strong>
+            <span>Chrome for Testing (~130 MB) will be downloaded.</span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-download" id="btn-download-chrome">Download Chrome</button>
+        <div class="progress-container hidden" id="chrome-progress">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="chrome-progress-fill"></div>
+          </div>
+          <div class="progress-text">
+            <span id="chrome-progress-pct">0%</span>
+            <span id="chrome-progress-size"></span>
+          </div>
+        </div>
+        <div class="chrome-status hidden" id="chrome-done" style="border-color:var(--success);background:#f0fff0">
+          <span class="chrome-status-icon">&#9989;</span>
+          <div class="chrome-status-text">
+            <strong>Download complete</strong>
+            <span>Chrome is ready to use.</span>
+          </div>
+        </div>
+        <div class="chrome-status hidden" id="chrome-error" style="border-color:var(--error);background:#fff5f5">
+          <span class="chrome-status-icon">&#10060;</span>
+          <div class="chrome-status-text">
+            <strong>Download failed</strong>
+            <span id="chrome-error-msg">An error occurred.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5: Complete -->
+    <div class="step-page" data-step="5">
+      <div class="step-icon" style="background:#e8f8e8;color:var(--success)">&#10003;</div>
+      <h1 class="step-title">Setup Complete!</h1>
+      <p class="step-desc">WebHere is ready to use. Here's a summary of your configuration:</p>
+      <ul class="summary-list" id="summary-list"></ul>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="btn btn-secondary hidden" id="btn-back">Back</button>
+    <div></div>
+    <button class="btn btn-primary" id="btn-next">Get Started</button>
+  </div>
+</div>
+
+<script src="setup.js"></script>
+</body>
+</html>

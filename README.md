@@ -67,8 +67,13 @@ The developers assume no liability for misuse of this software. Do not use this 
 
 Download the latest installer from the [**Releases**](../../releases) page.
 
-> On first launch, the app will download a lightweight Chromium runtime (~130 MB) for headless browsing.
-> Progress is shown in the title bar. This only happens once.
+The installer includes:
+- Welcome page with app description
+- MIT license agreement
+- Install directory selection
+- Desktop and Start Menu shortcut creation
+
+> On first launch, a **Setup Wizard** guides you through initial configuration.
 
 ### Linux
 
@@ -103,9 +108,17 @@ Build output is written to `dist/`.
 4. Click **Start** — progress is streamed in real time
 5. View results in the built-in gallery or open the downloads folder
 
-### First-time Setup
+### First-time Setup Wizard
 
-On first access, you'll be prompted to set an admin password. This protects the file manager and API key features.
+On first launch, a setup wizard walks you through configuration:
+
+1. **Downloads Directory** — Choose where images are saved (default: `Documents\WebHere Downloads`)
+2. **Admin Password** — Set a password to protect the file manager and API features
+3. **Discord Notifications** — Optionally configure a webhook for job alerts
+4. **Browser Download** — Automatically downloads Chrome for Testing (~130 MB) with a progress bar
+
+The wizard only runs once. Settings are saved to `%APPDATA%\WebHere\setup-config.json`.
+To re-run the wizard, use **Reset Data** from the system tray or `WebHere --clear-data`.
 
 ### Tabs
 
@@ -121,6 +134,11 @@ WebHere runs a local Express server inside the Electron process, paired with a h
 
 ```
 Electron Main Process
+├── Setup Wizard (first launch only)
+│   ├── Downloads directory selection
+│   ├── Admin password setup
+│   ├── Discord webhook config (optional)
+│   └── Chrome for Testing download (~130 MB)
 ├── Express API Server (localhost only, auto-assigned port)
 │   ├── Archiving Engine (Puppeteer + CDP)
 │   ├── Auth Module (bcrypt + JWT + API Keys)
@@ -151,6 +169,7 @@ Electron Main Process
 | Item | Windows | Linux |
 |------|---------|-------|
 | Downloaded images | `Documents\WebHere Downloads\` | `~/Documents/WebHere Downloads/` |
+| Setup config | `%APPDATA%\WebHere\setup-config.json` | `~/.config/WebHere/setup-config.json` |
 | Job history | `%APPDATA%\WebHere\history.json` | `~/.config/WebHere/history.json` |
 | Auth config | `%APPDATA%\WebHere\auth-config.json` | `~/.config/WebHere/auth-config.json` |
 | Chromium runtime | `%APPDATA%\WebHere\chrome\` | `~/.config/WebHere/chrome/` |
@@ -164,7 +183,7 @@ Electron Main Process
 
 The uninstaller automatically removes:
 - Application files and shortcuts
-- App data (`%APPDATA%\WebHere\`) including Chromium cache and job history
+- App data (`%APPDATA%\WebHere\`) including setup config, Chromium cache, and job history
 
 > **Note:** Downloaded images in `Documents\WebHere Downloads\` are **not** deleted by the uninstaller. Delete this folder manually if no longer needed.
 
@@ -183,7 +202,7 @@ rm -rf ~/Documents/WebHere\ Downloads
 
 ### In-App Reset
 
-Right-click the **system tray icon** and select **"Reset Data"** to delete history and cached Chromium without uninstalling the app. An optional checkbox lets you also delete all downloaded images.
+Right-click the **system tray icon** and select **"Reset Data"** to delete history, setup configuration, and cached Chromium without uninstalling the app. An optional checkbox lets you also delete all downloaded images. The setup wizard will run again on the next launch.
 
 ### CLI Reset
 
@@ -212,17 +231,27 @@ WebHere --clear-data --include-downloads
 
 ```
 webhere-desktop/
-├── main.js            # Electron main process
-├── preload.js         # Context-isolated IPC bridge
+├── main.js                # Electron main process + setup wizard flow
+├── preload.js             # Context-isolated IPC bridge
+├── setup/
+│   ├── setup-config.js    # Setup configuration persistence
+│   ├── setup-window.js    # Setup wizard window manager + IPC handlers
+│   └── setup-preload.js   # Setup window IPC bridge
+├── public-setup/
+│   ├── index.html         # Setup wizard UI (6-step flow)
+│   ├── setup.js           # Wizard navigation and validation logic
+│   └── setup.css          # Windows 11-style design
 ├── server/
-│   ├── server.js      # Express API (startServer function)
-│   ├── scraper.js     # Puppeteer-based image archiver
-│   ├── auth.js        # Authentication (password + JWT + API keys)
-│   ├── filemanager.js # File management API
-│   └── monitor.js     # System monitoring + Discord alerts
-├── public/            # Production React build
+│   ├── server.js          # Express API (startServer function)
+│   ├── scraper/           # Puppeteer-based image archiver
+│   ├── auth.js            # Authentication (password + JWT + API keys)
+│   ├── filemanager.js     # File management API
+│   └── monitor.js         # System monitoring + Discord alerts
+├── public/                # Production React build
 └── build/
-    └── icon.png       # App icon
+    ├── icon.png           # App icon
+    ├── installer.nsh      # Custom NSIS installer script
+    └── license.txt        # MIT license (shown during install)
 ```
 
 ## Contributing

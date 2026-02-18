@@ -231,7 +231,7 @@ async function sendDiscordAlert(config, type, data) {
     content = `**디스크 경고**\n남은 용량: ${data.freeMB}MB\n임계값: ${data.thresholdMB}MB`;
   } else if (type === 'test') {
     color = 0x58a6ff;
-    content = 'WebImageHere 알림 테스트\nDiscord 알림이 정상 작동합니다!';
+    content = 'WebHere 알림 테스트\nDiscord 알림이 정상 작동합니다!';
   } else {
     return;
   }
@@ -241,7 +241,7 @@ async function sendDiscordAlert(config, type, data) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        embeds: [{ description: content, color, footer: { text: 'WebImageHere Monitor' }, timestamp: new Date().toISOString() }],
+        embeds: [{ description: content, color, footer: { text: 'WebHere Monitor' }, timestamp: new Date().toISOString() }],
       }),
     });
     return res.ok;

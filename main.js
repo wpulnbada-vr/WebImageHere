@@ -7,15 +7,22 @@ const os = require('os');
 // ── Paths ──────────────────────────────────────────────────────────────────────
 const isPackaged = app.isPackaged;
 const appRoot = isPackaged ? path.dirname(app.getPath('exe')) : __dirname;
-const userDataDir = app.getPath('userData'); // %APPDATA%/WebImageHere (Win) or ~/.config/WebImageHere (Linux)
+const userDataDir = app.getPath('userData'); // %APPDATA%/WebHere (Win) or ~/.config/WebHere (Linux)
 const documentsDir = app.getPath('documents');
 
-const DOWNLOADS_DIR = path.join(documentsDir, 'WebImageHere Downloads');
+const DEFAULT_DOWNLOADS_DIR = path.join(documentsDir, 'WebHere Downloads');
 const HISTORY_FILE = path.join(userDataDir, 'history.json');
 const CHROME_CACHE_DIR = path.join(userDataDir, 'chrome');
 
+// Active downloads dir (may be overridden by setup config)
+let DOWNLOADS_DIR = DEFAULT_DOWNLOADS_DIR;
+
+// ── Setup Config ───────────────────────────────────────────────────────────────
+const SetupConfig = require('./setup/setup-config');
+SetupConfig.init(userDataDir);
+
 // Ensure directories
-for (const dir of [DOWNLOADS_DIR, userDataDir, CHROME_CACHE_DIR]) {
+for (const dir of [userDataDir, CHROME_CACHE_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -32,11 +39,17 @@ if (process.argv.includes('--clear-data')) {
     fs.rmSync(chromeDir, { recursive: true, force: true });
     removed.push('chrome/');
   }
+  // Also remove setup config to trigger wizard on next launch
+  const setupConfigFile = path.join(userDataDir, 'setup-config.json');
+  if (fs.existsSync(setupConfigFile)) {
+    fs.unlinkSync(setupConfigFile);
+    removed.push('setup-config.json');
+  }
   if (deleteAll) {
-    const dlDir = path.join(documentsDir, 'WebImageHere Downloads');
+    const dlDir = SetupConfig.getDownloadsDir(DEFAULT_DOWNLOADS_DIR);
     if (fs.existsSync(dlDir)) {
       fs.rmSync(dlDir, { recursive: true, force: true });
-      removed.push('WebImageHere Downloads/');
+      removed.push('Downloads/');
     }
   }
   console.log(removed.length > 0 ? `Removed: ${removed.join(', ')}` : 'Nothing to clean up.');
@@ -81,9 +94,14 @@ function findAvailablePort(startPort = 3000) {
   });
 }
 
-// ── Chrome download ────────────────────────────────────────────────────────────
-async function ensureChrome() {
+// ── Chrome helpers ─────────────────────────────────────────────────────────────
+function getFindChrome() {
   const { findChrome } = require('./server/scraper');
+  return findChrome;
+}
+
+async function ensureChrome() {
+  const findChrome = getFindChrome();
   const existing = findChrome(CHROME_CACHE_DIR);
   if (existing) {
     console.log(`[Chrome] Found: ${existing}`);
@@ -118,9 +136,9 @@ async function ensureChrome() {
     });
 
     if (mainWindow) {
-      mainWindow.setProgressBar(-1); // remove progress
+      mainWindow.setProgressBar(-1);
       mainWindow.webContents.executeJavaScript(
-        `document.title = 'WebImageHere'`
+        `document.title = 'WebHere'`
       ).catch(() => {});
     }
 
@@ -128,7 +146,6 @@ async function ensureChrome() {
     return result.executablePath;
   } catch (err) {
     console.error('[Chrome] Download failed:', err.message);
-    // Fallback: try system Chrome
     const fallback = findChrome();
     if (fallback) {
       console.log(`[Chrome] Fallback to system Chrome: ${fallback}`);
@@ -180,7 +197,7 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon);
-  tray.setToolTip('WebImageHere');
+  tray.setToolTip('WebHere');
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -259,7 +276,7 @@ async function showResetDialog() {
     cancelId: 0,
     title: 'Reset App Data',
     message: 'Delete app data and reset to initial state?',
-    detail: 'This will remove:\n- Job history\n- Cached Chromium browser (~130 MB)\n\nDownloaded images will NOT be deleted unless checked below.',
+    detail: 'This will remove:\n- Job history\n- Cached Chromium browser (~130 MB)\n- Setup configuration (wizard will run again)\n\nDownloaded images will NOT be deleted unless checked below.',
     checkboxLabel: 'Also delete all downloaded images',
     checkboxChecked: false,
   });
@@ -270,6 +287,12 @@ async function showResetDialog() {
       deleteChrome: true,
       deleteHistory: true,
     });
+    // Also remove setup config
+    const setupConfigFile = path.join(userDataDir, 'setup-config.json');
+    if (fs.existsSync(setupConfigFile)) {
+      fs.unlinkSync(setupConfigFile);
+      removed.push('Setup configuration');
+    }
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'Reset Complete',
@@ -294,26 +317,47 @@ function setupIPC() {
   });
 }
 
-// ── App lifecycle ──────────────────────────────────────────────────────────────
-app.whenReady().then(async () => {
+// ── Setup Wizard ───────────────────────────────────────────────────────────────
+async function runSetupWizard() {
+  const { createSetupWindow } = require('./setup/setup-window');
+  const findChrome = getFindChrome();
+
+  const result = await createSetupWindow({
+    userDataDir,
+    defaultDownloadsDir: DEFAULT_DOWNLOADS_DIR,
+    chromeCacheDir: CHROME_CACHE_DIR,
+    findChrome,
+  });
+
+  return result; // { downloadsDir, chromePath } or null if user closed
+}
+
+// ── Normal startup (after setup) ────────────────────────────────────────────
+async function startApp(chromePath) {
   setupIPC();
   createWindow();
   createTray();
+
+  // Ensure downloads directory exists
+  if (!fs.existsSync(DOWNLOADS_DIR)) {
+    fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+  }
 
   try {
     // Find available port
     serverPort = await findAvailablePort(3000);
     console.log(`[Server] Using port ${serverPort}`);
 
-    // Ensure Chrome is available
-    let chromePath;
-    try {
-      chromePath = await ensureChrome();
-    } catch (err) {
-      dialog.showErrorBox('Chrome 오류', err.message);
-      app.isQuitting = true;
-      app.quit();
-      return;
+    // Ensure Chrome if not provided by setup
+    if (!chromePath) {
+      try {
+        chromePath = await ensureChrome();
+      } catch (err) {
+        dialog.showErrorBox('Chrome 오류', err.message);
+        app.isQuitting = true;
+        app.quit();
+        return;
+      }
     }
 
     // Start Express server
@@ -337,10 +381,39 @@ app.whenReady().then(async () => {
     app.isQuitting = true;
     app.quit();
   }
+}
+
+// ── App lifecycle ──────────────────────────────────────────────────────────────
+app.whenReady().then(async () => {
+  let chromePath = null;
+
+  if (!SetupConfig.isSetupComplete()) {
+    // First launch: show setup wizard
+    console.log('[Setup] First launch — starting setup wizard');
+    const setupResult = await runSetupWizard();
+
+    if (!setupResult) {
+      // User closed the setup window without completing
+      console.log('[Setup] Cancelled by user');
+      app.isQuitting = true;
+      app.quit();
+      return;
+    }
+
+    // Apply setup results
+    DOWNLOADS_DIR = setupResult.downloadsDir || DEFAULT_DOWNLOADS_DIR;
+    chromePath = setupResult.chromePath;
+    console.log(`[Setup] Complete — downloads: ${DOWNLOADS_DIR}`);
+  } else {
+    // Subsequent launches: read config
+    DOWNLOADS_DIR = SetupConfig.getDownloadsDir(DEFAULT_DOWNLOADS_DIR);
+    console.log(`[Config] Downloads: ${DOWNLOADS_DIR}`);
+  }
+
+  await startApp(chromePath);
 });
 
 app.on('window-all-closed', () => {
-  // On macOS, keep app running in background
   if (process.platform !== 'darwin') {
     app.isQuitting = true;
     app.quit();
